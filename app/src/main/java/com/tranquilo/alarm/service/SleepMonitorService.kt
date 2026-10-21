@@ -151,6 +151,9 @@ class SleepMonitorService : Service(), SensorEventListener {
                 peak = peak
             )
         )
+        // Запоминаем, что на этот крайний срок уже прозвонили, — чтобы после
+        // «Выключить» мониторинг не запустился снова до того же срока.
+        if (windowEndMs > 0L) store.saveHandledDeadline(windowEndMs)
 
         AlarmPlayer.start(this, settings.soundEnabled)
         goForeground(ringNotification())
@@ -168,7 +171,8 @@ class SleepMonitorService : Service(), SensorEventListener {
     private fun stopEverything() {
         releaseSensors()
         AlarmPlayer.stop()
-        // Ставим будильник на следующие сутки.
+        // Ставим будильник на следующие сутки. Сегодняшний срок AlarmScheduler
+        // пропустит сам: он уже отмечен в ring() как отработанный.
         AlarmScheduler.schedule(this, store.load())
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
         stopSelf()
