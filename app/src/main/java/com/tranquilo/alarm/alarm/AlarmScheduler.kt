@@ -6,8 +6,10 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import com.tranquilo.alarm.data.AlarmSettings
+import com.tranquilo.alarm.data.SettingsStore
+import java.time.Instant
 import java.time.LocalTime
-import java.time.ZonedDateTime
+import java.time.ZoneId
 
 object AlarmScheduler {
 
@@ -22,9 +24,16 @@ object AlarmScheduler {
         cancelAll(context)
         if (!settings.enabled) return
 
-        val endMs = nextOccurrence(settings.windowEnd)
-        val monitorMs = endMs - (settings.windowMinutes + AlarmSettings.BASELINE_MINUTES) * 60_000L
         val now = System.currentTimeMillis()
+        var endMs = nextOccurrence(settings.windowEnd, now)
+
+        // На этот срок будильник уже прозвонил (например, разбудил по движению в 08:10
+        // при сроке 08:30) — не запускаем мониторинг повторно, ставим на следующие сутки.
+        if (endMs == SettingsStore(context).loadHandledDeadline()) {
+            endMs = nextOccurrence(settings.windowEnd, endMs)
+        }
+
+        val monitorMs = endMs - (settings.windowMinutes + AlarmSettings.BASELINE_MINUTES) * 60_000L
 
         // Если мы уже внутри периода мониторинга — стартуем прямо сейчас.
         val startAt = if (monitorMs <= now) now + 1_000L else monitorMs
@@ -43,11 +52,14 @@ object AlarmScheduler {
         am.cancel(pendingIntent(context, ACTION_RING, RC_RING))
     }
 
-    /** Ближайшее наступление указанного времени суток. Корректно работает через полночь. */
-    private fun nextOccurrence(time: LocalTime): Long {
-        val now = ZonedDateTime.now()
-        var target = now.withHour(time.hour).withMinute(time.minute).withSecond(0).withNano(0)
-        if (!target.isAfter(now)) target = target.plusDays(1)
+    /**
+     * Ближайшее наступление указанного времени суток строго после момента [afterMs].
+     * Корректно работает через полночь.
+     */
+    private fun nextOccurrence(time: LocalTime, afterMs: Long): Long {
+        val after = Instant.ofEpochMilli(afterMs).atZone(ZoneId.systemDefault())
+        var target = after.withHour(time.hour).withMinute(time.minute).withSecond(0).withNano(0)
+        if (!target.isAfter(after)) target = target.plusDays(1)
         return target.toInstant().toEpochMilli()
     }
 

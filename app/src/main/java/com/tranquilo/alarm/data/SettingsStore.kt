@@ -52,6 +52,13 @@ class SettingsStore(context: Context) {
         )
     }
 
+    /** Крайний срок (момент времени в мс), на который будильник уже прозвонил. */
+    fun saveHandledDeadline(deadlineMs: Long) {
+        prefs.edit().putLong(KEY_HANDLED_DEADLINE, deadlineMs).apply()
+    }
+
+    fun loadHandledDeadline(): Long = prefs.getLong(KEY_HANDLED_DEADLINE, 0L)
+
     private companion object {
         const val KEY_ENABLED = "enabled"
         const val KEY_END_HOUR = "end_hour"
@@ -65,5 +72,7 @@ class SettingsStore(context: Context) {
         const val KEY_R_BASE = "report_baseline"
         const val KEY_R_THRESH = "report_threshold"
         const val KEY_R_PEAK = "report_peak"
+
+        const val KEY_HANDLED_DEADLINE = "handled_deadline"
     }
 }
