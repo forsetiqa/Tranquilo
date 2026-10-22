@@ -30,5 +30,11 @@ data class NightReport(
     val smart: Boolean,
     val baseline: Double,
     val threshold: Double,
-    val peak: Double
+    val peak: Double,
+    val windowMinutes: Int = 30,
+    /** Все эпохи ночи: от начала калибровки до звонка. */
+    val epochs: List<Epoch> = emptyList()
 )
+
+/** Одна 30-секундная эпоха: сколько секунд оставалось до крайнего срока и сила движения. */
+data class Epoch(val secondsToEnd: Int, val value: Float)

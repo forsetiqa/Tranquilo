@@ -23,6 +23,7 @@ import com.tranquilo.alarm.alarm.AlarmPlayer
 import com.tranquilo.alarm.alarm.AlarmScheduler
 import com.tranquilo.alarm.core.MovementAnalyzer
 import com.tranquilo.alarm.data.AlarmSettings
+import com.tranquilo.alarm.data.Epoch
 import com.tranquilo.alarm.data.NightReport
 import com.tranquilo.alarm.data.SettingsStore
 import java.time.LocalTime
@@ -43,6 +44,7 @@ class SleepMonitorService : Service(), SensorEventListener {
     private var baselineFinished = false
     private var peak = 0.0
     private var ringing = false
+    private val epochLog = ArrayList<Epoch>()
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -107,6 +109,7 @@ class SleepMonitorService : Service(), SensorEventListener {
         ) ?: return
 
         val now = System.currentTimeMillis()
+        epochLog.add(Epoch(((windowEndMs - now) / 1000).toInt(), epoch.toFloat()))
 
         if (now < windowStartMs) {
             a.addBaselineEpoch(epoch)
@@ -148,7 +151,9 @@ class SleepMonitorService : Service(), SensorEventListener {
                 smart = smart,
                 baseline = a?.baseline ?: 0.0,
                 threshold = a?.threshold?.takeIf { it != Double.MAX_VALUE } ?: 0.0,
-                peak = peak
+                peak = peak,
+                windowMinutes = settings.windowMinutes,
+                epochs = epochLog.toList()
             )
         )
         // Запоминаем, что на этот крайний срок уже прозвонили, — чтобы после

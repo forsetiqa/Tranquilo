@@ -9,19 +9,20 @@ import kotlin.math.sqrt
  *
  * Работает так:
  *  1. Каждые 30 секунд сводит поток данных акселерометра в одно число — "эпоху".
+ *     Это самое сильное движение за эти 30 секунд (как в классической актиграфии).
  *  2. До начала окна пробуждения копит эпохи как фон этой ночи (калибровка).
- *  3. В окне сравнивает текущие эпохи с фоном: заметно выше — значит человек
- *     шевелится, это поверхностный сон, можно будить.
+ *  3. В окне сравнивает эпохи с фоном: движение заметно выше фона — значит человек
+ *     ворочается, это поверхностный сон, можно будить.
  */
 class MovementAnalyzer(sensitivity: Int) {
 
-    /** Во сколько раз движение должно превысить фон, чтобы считаться пробуждением. */
-    private val multiplier = when (sensitivity.coerceIn(1, 5)) {
-        1 -> 3.5   // будит редко, чаще досидит до конца окна
-        2 -> 2.8
-        3 -> 2.2
-        4 -> 1.8
-        else -> 1.5 // будит при малейшем шевелении
+    /** На сколько движение должно превысить фон, чтобы разбудить (м/с²). */
+    private val step = when (sensitivity.coerceIn(1, 5)) {
+        1 -> 1.2   // будит только на явном перевороте
+        2 -> 0.8
+        3 -> 0.5
+        4 -> 0.3
+        else -> 0.2 // будит при малейшем шевелении
     }
 
     // Плавная оценка гравитации. Вычитаем её из показаний — остаётся только движение.
@@ -29,11 +30,9 @@ class MovementAnalyzer(sensitivity: Int) {
     private var gravity = -1.0
 
     private var epochStartMs = 0L
-    private var sum = 0.0
-    private var samples = 0
+    private var epochMax = 0.0
 
     private val baselineEpochs = ArrayList<Double>()
-    private val recent = ArrayDeque<Boolean>()
 
     /** Фоновый уровень движений этой ночи. Известен после finishBaseline(). */
     var baseline: Double? = null
@@ -52,16 +51,12 @@ class MovementAnalyzer(sensitivity: Int) {
 
         val magnitude = sqrt((x * x + y * y + z * z).toDouble())
         gravity = if (gravity < 0) magnitude else gravity + GRAVITY_SMOOTHING * (magnitude - gravity)
-
-        val delta = abs(magnitude - gravity)
-        sum += if (delta < NOISE_FLOOR) 0.0 else delta
-        samples++
+        epochMax = max(epochMax, abs(magnitude - gravity))
 
         if (nowMs - epochStartMs < EPOCH_MS) return null
 
-        val value = if (samples > 0) sum / samples else 0.0
-        sum = 0.0
-        samples = 0
+        val value = epochMax
+        epochMax = 0.0
         epochStartMs = nowMs
         return value
     }
@@ -78,27 +73,21 @@ class MovementAnalyzer(sensitivity: Int) {
         val quiet = baselineEpochs.sorted().let { it.take(max(1, it.size / 2)) }
         val b = if (quiet.isEmpty()) DEFAULT_BASELINE else quiet.average()
         baseline = b
-        threshold = max(b * multiplier, ABSOLUTE_FLOOR)
+        threshold = b + step
     }
 
     /**
-     * Момент для пробуждения: две активные эпохи из последних трёх.
-     * Одиночный рывок не разбудит, минута возни — разбудит.
+     * Момент для пробуждения — одно заметное движение. В глубоком сне тело почти
+     * неподвижно, поэтому даже короткий переворот означает поверхностный сон.
      */
-    fun isWakeMoment(epochValue: Double): Boolean {
-        recent.addLast(epochValue > threshold)
-        if (recent.size > 3) recent.removeFirst()
-        return recent.count { it } >= 2
-    }
+    fun isWakeMoment(epochValue: Double): Boolean = epochValue > threshold
 
     companion object {
         const val EPOCH_MS = 30_000L
 
-        // Все подбираемые числа — здесь. Их, скорее всего, придётся подкрутить
-        // после первых ночей, глядя на строчку «Прошлый раз» в приложении.
+        // Подбираемые числа — здесь и в `step` выше. Подкручивать по графику
+        // прошлой ночи на главном экране.
         private const val GRAVITY_SMOOTHING = 0.02
-        private const val NOISE_FLOOR = 0.04
-        private const val ABSOLUTE_FLOOR = 0.06
-        private const val DEFAULT_BASELINE = 0.03
+        private const val DEFAULT_BASELINE = 0.05
     }
 }

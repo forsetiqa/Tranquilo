@@ -1,14 +1,19 @@
 package com.tranquilo.alarm.ui
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
@@ -26,6 +31,8 @@ import com.tranquilo.alarm.data.NightReport
 import java.time.Instant
 import java.time.LocalTime
 import java.time.ZoneId
+import kotlin.math.max
+import kotlin.math.sqrt
 
 @Composable
 fun MainScreen(
@@ -162,13 +169,70 @@ private fun LastNight(report: NightReport?) {
 
     val how = if (report.smart) "по движению" else "в конце окна"
 
-    Text(
-        text = "Прошлый раз: ${fmt(time)}, $how.\n" +
-            "Фон %.2f · порог %.2f · пик %.2f".format(report.baseline, report.threshold, report.peak),
-        style = MaterialTheme.typography.caption3,
-        textAlign = TextAlign.Center,
-        modifier = Modifier.padding(8.dp)
-    )
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(
+            text = "Прошлый раз: ${fmt(time)}, $how.\n" +
+                "Фон %.2f · порог %.2f · пик %.2f".format(report.baseline, report.threshold, report.peak),
+            style = MaterialTheme.typography.caption3,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+        )
+        if (report.epochs.isNotEmpty()) {
+            NightChart(report)
+            Text(
+                text = "Столбики — движения. Подсвечено окно, линия — порог.",
+                style = MaterialTheme.typography.caption3,
+                color = MaterialTheme.colors.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+            )
+        }
+    }
+}
+
+/**
+ * Движения за ночь: от начала калибровки (слева) до крайнего срока (справа).
+ * Высота столбика — корень из силы движения, чтобы мелкие тоже было видно.
+ */
+@Composable
+private fun NightChart(report: NightReport) {
+    val barColor = MaterialTheme.colors.onSurface.copy(alpha = 0.45f)
+    val hitColor = MaterialTheme.colors.primary
+    val lineColor = MaterialTheme.colors.secondary
+    val windowColor = MaterialTheme.colors.primary.copy(alpha = 0.14f)
+
+    val total = (report.windowMinutes + AlarmSettings.BASELINE_MINUTES) * 60f
+    val windowSeconds = report.windowMinutes * 60
+    val top = maxOf(report.threshold * 2, report.peak, 0.5).toFloat()
+    fun scale(v: Float) = sqrt((v / top).coerceIn(0f, 1f))
+
+    Canvas(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp)
+            .height(44.dp)
+    ) {
+        val w = size.width
+        val h = size.height
+        fun x(secondsToEnd: Int) = w * (1f - secondsToEnd / total)
+
+        val windowX = x(windowSeconds)
+        drawRect(windowColor, topLeft = Offset(windowX, 0f), size = Size(w - windowX, h))
+
+        val barWidth = max(1.5f, w / (total / 30f) * 0.7f)
+        report.epochs.forEach { e ->
+            val ex = x(e.secondsToEnd)
+            if (ex < 0f || ex > w) return@forEach
+            val inWindow = e.secondsToEnd <= windowSeconds
+            val color = if (inWindow && e.value > report.threshold) hitColor else barColor
+            drawLine(color, Offset(ex, h), Offset(ex, h - h * scale(e.value)), strokeWidth = barWidth)
+        }
+
+        if (report.threshold > 0) {
+            val ty = h * (1f - scale(report.threshold.toFloat()))
+            drawLine(lineColor, Offset(windowX, ty), Offset(w, ty), strokeWidth = 2f)
+        }
+    }
 }
 
 private fun fmt(t: LocalTime) = "%02d:%02d".format(t.hour, t.minute)

@@ -37,8 +37,19 @@ class SettingsStore(context: Context) {
             .putFloat(KEY_R_BASE, r.baseline.toFloat())
             .putFloat(KEY_R_THRESH, r.threshold.toFloat())
             .putFloat(KEY_R_PEAK, r.peak.toFloat())
+            .putInt(KEY_R_WINDOW, r.windowMinutes)
+            .putString(KEY_R_EPOCHS, r.epochs.joinToString(",") { "${it.secondsToEnd}:${it.value}" })
             .apply()
     }
+
+    private fun parseEpochs(raw: String?): List<Epoch> =
+        raw.orEmpty().split(",").mapNotNull { item ->
+            val parts = item.split(":")
+            if (parts.size != 2) return@mapNotNull null
+            val seconds = parts[0].toIntOrNull() ?: return@mapNotNull null
+            val value = parts[1].toFloatOrNull() ?: return@mapNotNull null
+            Epoch(seconds, value)
+        }
 
     fun loadReport(): NightReport? {
         val time = prefs.getLong(KEY_R_TIME, 0L)
@@ -48,7 +59,9 @@ class SettingsStore(context: Context) {
             smart = prefs.getBoolean(KEY_R_SMART, false),
             baseline = prefs.getFloat(KEY_R_BASE, 0f).toDouble(),
             threshold = prefs.getFloat(KEY_R_THRESH, 0f).toDouble(),
-            peak = prefs.getFloat(KEY_R_PEAK, 0f).toDouble()
+            peak = prefs.getFloat(KEY_R_PEAK, 0f).toDouble(),
+            windowMinutes = prefs.getInt(KEY_R_WINDOW, 30),
+            epochs = parseEpochs(prefs.getString(KEY_R_EPOCHS, null))
         )
     }
 
@@ -72,6 +85,8 @@ class SettingsStore(context: Context) {
         const val KEY_R_BASE = "report_baseline"
         const val KEY_R_THRESH = "report_threshold"
         const val KEY_R_PEAK = "report_peak"
+        const val KEY_R_WINDOW = "report_window"
+        const val KEY_R_EPOCHS = "report_epochs"
 
         const val KEY_HANDLED_DEADLINE = "handled_deadline"
     }
