@@ -46,6 +46,10 @@ class SleepMonitorService : Service(), SensorEventListener {
     private var ringing = false
     private val epochLog = ArrayList<Epoch>()
 
+    // Пульс копим внутри текущей эпохи и пишем среднее вместе с движением.
+    private var hrSum = 0.0
+    private var hrCount = 0
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
@@ -96,6 +100,14 @@ class SleepMonitorService : Service(), SensorEventListener {
                 return@also
             }
             sm.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_NORMAL)
+
+            // Пульс пока только записываем — для сравнения с фазами сна в Mobvoi Health.
+            // Нет разрешения или датчика — просто работаем по движению.
+            if (HeartRateAccess.full(this)) {
+                sm.getDefaultSensor(Sensor.TYPE_HEART_RATE)?.let { hr ->
+                    runCatching { sm.registerListener(this, hr, SensorManager.SENSOR_DELAY_NORMAL) }
+                }
+            }
         }
     }
 
@@ -103,13 +115,26 @@ class SleepMonitorService : Service(), SensorEventListener {
         if (ringing) return
         val a = analyzer ?: return
 
+        if (event.sensor.type == Sensor.TYPE_HEART_RATE) {
+            val bpm = event.values.firstOrNull() ?: 0f
+            val reliable = event.accuracy >= SensorManager.SENSOR_STATUS_ACCURACY_LOW
+            if (reliable && bpm > 0f) {
+                hrSum += bpm
+                hrCount++
+            }
+            return
+        }
+
         val epoch = a.addSample(
             System.currentTimeMillis(),
             event.values[0], event.values[1], event.values[2]
         ) ?: return
 
         val now = System.currentTimeMillis()
-        epochLog.add(Epoch(((windowEndMs - now) / 1000).toInt(), epoch.toFloat()))
+        val hr = if (hrCount > 0) (hrSum / hrCount).toFloat() else 0f
+        hrSum = 0.0
+        hrCount = 0
+        epochLog.add(Epoch(((windowEndMs - now) / 1000).toInt(), epoch.toFloat(), hr))
 
         if (now < windowStartMs) {
             a.addBaselineEpoch(epoch)
@@ -200,22 +225,26 @@ class SleepMonitorService : Service(), SensorEventListener {
 
     private fun goForeground(notification: Notification) {
         if (Build.VERSION.SDK_INT >= 34) {
-            ServiceCompat.startForeground(
-                this, NOTIF_MONITOR_ID, notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
-            )
+            var type = ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+            if (HeartRateAccess.foreground(this)) type = type or ServiceInfo.FOREGROUND_SERVICE_TYPE_HEALTH
+            ServiceCompat.startForeground(this, NOTIF_MONITOR_ID, notification, type)
         } else {
             startForeground(NOTIF_MONITOR_ID, notification)
         }
     }
 
+    /** Без звука, вибрации и включения экрана: в это время человек спит. */
     private fun monitorNotification(): Notification =
         NotificationCompat.Builder(this, CHANNEL_MONITOR)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle("Tranquilo следит за сном")
             .setContentText("Разбудит между ${fmt(settings.windowStart)} и ${fmt(settings.windowEnd)}")
             .setOngoing(true)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setSilent(true)
+            .setOnlyAlertOnce(true)
+            .setShowWhen(false)
+            .setCategory(NotificationCompat.CATEGORY_SERVICE)
+            .setPriority(NotificationCompat.PRIORITY_MIN)
             .build()
 
     private fun ringNotification(): Notification {
@@ -238,8 +267,14 @@ class SleepMonitorService : Service(), SensorEventListener {
 
     private fun createChannels() {
         val manager = getSystemService(NotificationManager::class.java)
+        // Важность созданного канала не меняется — старый удаляем, заводим новый, тихий.
+        manager.deleteNotificationChannel(OLD_CHANNEL_MONITOR)
         manager.createNotificationChannel(
-            NotificationChannel(CHANNEL_MONITOR, "Мониторинг сна", NotificationManager.IMPORTANCE_LOW)
+            NotificationChannel(CHANNEL_MONITOR, "Мониторинг сна", NotificationManager.IMPORTANCE_MIN).apply {
+                setSound(null, null)
+                enableVibration(false)
+                setShowBadge(false)
+            }
         )
         manager.createNotificationChannel(
             NotificationChannel(CHANNEL_RING, "Будильник", NotificationManager.IMPORTANCE_HIGH).apply {
@@ -263,7 +298,8 @@ class SleepMonitorService : Service(), SensorEventListener {
         const val ACTION_RING = "com.tranquilo.alarm.service.RING"
         const val ACTION_STOP = "com.tranquilo.alarm.service.STOP"
 
-        private const val CHANNEL_MONITOR = "monitor"
+        private const val OLD_CHANNEL_MONITOR = "monitor"
+        private const val CHANNEL_MONITOR = "monitor_quiet"
         private const val CHANNEL_RING = "ring"
         private const val NOTIF_MONITOR_ID = 1
 

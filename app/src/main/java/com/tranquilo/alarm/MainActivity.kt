@@ -16,12 +16,21 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.tranquilo.alarm.service.HeartRateAccess
 import com.tranquilo.alarm.ui.MainScreen
 import com.tranquilo.alarm.ui.MainViewModel
 import com.tranquilo.alarm.ui.TimeEditScreen
 import com.tranquilo.alarm.ui.TranquiloTheme
 
 class MainActivity : ComponentActivity() {
+
+    /** Есть ли полный доступ к пульсу. Обновляется при каждом возврате в приложение. */
+    private var heartRateAccess by mutableStateOf(false)
+
+    override fun onResume() {
+        super.onResume()
+        heartRateAccess = HeartRateAccess.full(this)
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -32,20 +41,41 @@ class MainActivity : ComponentActivity() {
                 val settings by vm.settings.collectAsState()
                 var editingTime by remember { mutableStateOf(false) }
 
-                val notificationLauncher = rememberLauncherForActivityResult(
+                // Шаг 2: пульс в фоне (Android 13+). Датчик включается ночью по будильнику.
+                val backgroundLauncher = rememberLauncherForActivityResult(
                     ActivityResultContracts.RequestPermission()
-                ) { /* отказ не ломает будильник: вибрация сработает в любом случае */ }
+                ) { heartRateAccess = HeartRateAccess.full(this@MainActivity) }
+
+                // Шаг 1: уведомления и пульс. Отказ ничего не ломает:
+                // без уведомлений будильник всё равно вибрирует, без пульса будит по движению.
+                val firstLauncher = rememberLauncherForActivityResult(
+                    ActivityResultContracts.RequestMultiplePermissions()
+                ) {
+                    heartRateAccess = HeartRateAccess.full(this@MainActivity)
+                    askBackgroundIfNeeded { backgroundLauncher.launch(HeartRateAccess.BACKGROUND) }
+                }
+
+                val requestAll = {
+                    val missing = buildList {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                            !granted(Manifest.permission.POST_NOTIFICATIONS)
+                        ) {
+                            add(Manifest.permission.POST_NOTIFICATIONS)
+                        }
+                        if (!HeartRateAccess.foreground(this@MainActivity)) {
+                            add(Manifest.permission.BODY_SENSORS)
+                        }
+                    }
+                    if (missing.isNotEmpty()) {
+                        firstLauncher.launch(missing.toTypedArray())
+                    } else {
+                        askBackgroundIfNeeded { backgroundLauncher.launch(HeartRateAccess.BACKGROUND) }
+                    }
+                }
 
                 LaunchedEffect(Unit) {
                     vm.refresh()
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                        val granted = ContextCompat.checkSelfPermission(
-                            this@MainActivity, Manifest.permission.POST_NOTIFICATIONS
-                        ) == PackageManager.PERMISSION_GRANTED
-                        if (!granted) {
-                            notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                        }
-                    }
+                    requestAll()
                 }
 
                 if (editingTime) {
@@ -57,9 +87,21 @@ class MainActivity : ComponentActivity() {
                         editingTime = false
                     }
                 } else {
-                    MainScreen(viewModel = vm, onEditTime = { editingTime = true })
+                    MainScreen(
+                        viewModel = vm,
+                        heartRateAccess = heartRateAccess,
+                        onRequestHeartRate = { requestAll() },
+                        onEditTime = { editingTime = true }
+                    )
                 }
             }
         }
     }
+
+    private fun askBackgroundIfNeeded(launch: () -> Unit) {
+        if (HeartRateAccess.foreground(this) && !HeartRateAccess.background(this)) launch()
+    }
+
+    private fun granted(permission: String) =
+        ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED
 }

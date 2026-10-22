@@ -67,12 +67,7 @@ fun TimeEditScreen(
 
         Spacer(Modifier.height(10.dp))
 
-        Button(
-            onClick = { onDone(hour, minute) },
-            colors = ButtonDefaults.primaryButtonColors()
-        ) {
-            Text("Готово")
-        }
+        WideButton(text = "Готово", onClick = { onDone(hour, minute) })
     }
 }
 

@@ -14,6 +14,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
@@ -37,6 +38,8 @@ import kotlin.math.sqrt
 @Composable
 fun MainScreen(
     viewModel: MainViewModel,
+    heartRateAccess: Boolean,
+    onRequestHeartRate: () -> Unit,
     onEditTime: () -> Unit
 ) {
     val settings by viewModel.settings.collectAsState()
@@ -104,6 +107,18 @@ fun MainScreen(
                 )
             }
 
+            item {
+                Chip(
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = { if (!heartRateAccess) onRequestHeartRate() },
+                    colors = ChipDefaults.secondaryChipColors(),
+                    label = { Text("Пульс") },
+                    secondaryLabel = {
+                        Text(if (heartRateAccess) "Записывается ночью" else "Нет доступа, нажми")
+                    }
+                )
+            }
+
             item { LastNight(report) }
         }
     }
@@ -168,11 +183,15 @@ private fun LastNight(report: NightReport?) {
         .atZone(ZoneId.systemDefault()).toLocalTime()
 
     val how = if (report.smart) "по движению" else "в конце окна"
+    val pulses = report.epochs.map { it.hr }.filter { it > 0f }
+    val pulseLine = if (pulses.isEmpty()) "" else
+        "\nПульс %.0f–%.0f".format(pulses.min(), pulses.max())
 
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Text(
             text = "Прошлый раз: ${fmt(time)}, $how.\n" +
-                "Фон %.2f · порог %.2f · пик %.2f".format(report.baseline, report.threshold, report.peak),
+                "Фон %.2f · порог %.2f · пик %.2f".format(report.baseline, report.threshold, report.peak) +
+                pulseLine,
             style = MaterialTheme.typography.caption3,
             textAlign = TextAlign.Center,
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
@@ -180,7 +199,7 @@ private fun LastNight(report: NightReport?) {
         if (report.epochs.isNotEmpty()) {
             NightChart(report)
             Text(
-                text = "Столбики — движения. Подсвечено окно, линия — порог.",
+                text = "Столбики — движения, красная линия — пульс, золотистая — порог. Подсвечено окно.",
                 style = MaterialTheme.typography.caption3,
                 color = MaterialTheme.colors.onSurfaceVariant,
                 textAlign = TextAlign.Center,
@@ -200,6 +219,7 @@ private fun NightChart(report: NightReport) {
     val hitColor = MaterialTheme.colors.primary
     val lineColor = MaterialTheme.colors.secondary
     val windowColor = MaterialTheme.colors.primary.copy(alpha = 0.14f)
+    val pulseColor = Color(0xFFE08A8A)
 
     val total = (report.windowMinutes + AlarmSettings.BASELINE_MINUTES) * 60f
     val windowSeconds = report.windowMinutes * 60
@@ -231,6 +251,25 @@ private fun NightChart(report: NightReport) {
         if (report.threshold > 0) {
             val ty = h * (1f - scale(report.threshold.toFloat()))
             drawLine(lineColor, Offset(windowX, ty), Offset(w, ty), strokeWidth = 2f)
+        }
+
+        // Пульс — своя шкала: от минимума ночи (низ) до максимума (верх).
+        val withHr = report.epochs.filter { it.hr > 0f }
+        if (withHr.size >= 2) {
+            val lo = withHr.minOf { it.hr }
+            val hi = max(withHr.maxOf { it.hr }, lo + 10f)
+            fun hy(hr: Float) = h * (0.9f - 0.8f * (hr - lo) / (hi - lo))
+            withHr.zipWithNext { a, b ->
+                // Разрыв больше двух минут — датчик молчал, линию не соединяем.
+                if (a.secondsToEnd - b.secondsToEnd <= 120) {
+                    drawLine(
+                        pulseColor,
+                        Offset(x(a.secondsToEnd), hy(a.hr)),
+                        Offset(x(b.secondsToEnd), hy(b.hr)),
+                        strokeWidth = 2f
+                    )
+                }
+            }
         }
     }
 }

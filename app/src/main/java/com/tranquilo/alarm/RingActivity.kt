@@ -16,12 +16,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.wear.compose.material.Button
-import androidx.wear.compose.material.ButtonDefaults
 import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.material.Text
 import com.tranquilo.alarm.service.SleepMonitorService
 import com.tranquilo.alarm.ui.TranquiloTheme
+import com.tranquilo.alarm.ui.WideButton
 import java.time.LocalTime
 
 class RingActivity : ComponentActivity() {
@@ -79,11 +78,6 @@ private fun RingScreen(onDismiss: () -> Unit) {
 
         Spacer(Modifier.height(12.dp))
 
-        Button(
-            onClick = onDismiss,
-            colors = ButtonDefaults.primaryButtonColors()
-        ) {
-            Text("Выключить")
-        }
+        WideButton(text = "Выключить", onClick = onDismiss)
     }
 }

@@ -38,17 +38,19 @@ class SettingsStore(context: Context) {
             .putFloat(KEY_R_THRESH, r.threshold.toFloat())
             .putFloat(KEY_R_PEAK, r.peak.toFloat())
             .putInt(KEY_R_WINDOW, r.windowMinutes)
-            .putString(KEY_R_EPOCHS, r.epochs.joinToString(",") { "${it.secondsToEnd}:${it.value}" })
+            .putString(KEY_R_EPOCHS, r.epochs.joinToString(",") { "${it.secondsToEnd}:${it.value}:${it.hr}" })
             .apply()
     }
 
+    /** Формат: "секунды:движение:пульс" через запятую. Старые записи — без пульса. */
     private fun parseEpochs(raw: String?): List<Epoch> =
         raw.orEmpty().split(",").mapNotNull { item ->
             val parts = item.split(":")
-            if (parts.size != 2) return@mapNotNull null
+            if (parts.size !in 2..3) return@mapNotNull null
             val seconds = parts[0].toIntOrNull() ?: return@mapNotNull null
             val value = parts[1].toFloatOrNull() ?: return@mapNotNull null
-            Epoch(seconds, value)
+            val hr = parts.getOrNull(2)?.toFloatOrNull() ?: 0f
+            Epoch(seconds, value, hr)
         }
 
     fun loadReport(): NightReport? {

@@ -36,5 +36,8 @@ data class NightReport(
     val epochs: List<Epoch> = emptyList()
 )
 
-/** Одна 30-секундная эпоха: сколько секунд оставалось до крайнего срока и сила движения. */
-data class Epoch(val secondsToEnd: Int, val value: Float)
+/**
+ * Одна 30-секундная эпоха: сколько секунд оставалось до крайнего срока,
+ * сила движения и средний пульс (0 — пульса нет).
+ */
+data class Epoch(val secondsToEnd: Int, val value: Float, val hr: Float = 0f)
