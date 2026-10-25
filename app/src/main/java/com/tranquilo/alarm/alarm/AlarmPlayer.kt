@@ -5,6 +5,7 @@ import android.media.AudioAttributes
 import android.media.Ringtone
 import android.media.RingtoneManager
 import android.os.Build
+import android.os.VibrationAttributes
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
@@ -20,12 +21,22 @@ object AlarmPlayer {
         stop()
 
         vibrator = vibrator(context).also { v ->
-            val pattern = longArrayOf(0, 700, 400, 700, 1500)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                v.vibrate(VibrationEffect.createWaveform(pattern, 0))
+            // Три длинных сильных импульса, пауза — и по кругу, пока не нажмут «Выключить».
+            val timings = longArrayOf(0, 1000, 400, 1000, 400, 1000, 1200)
+            val amplitudes = intArrayOf(0, 255, 0, 255, 0, 255, 0)
+            val effect = if (v.hasAmplitudeControl()) {
+                VibrationEffect.createWaveform(timings, amplitudes, 0)
+            } else {
+                VibrationEffect.createWaveform(timings, 0)
+            }
+
+            // Помечаем вибрацию как будильник: иначе ночной режим и «Не беспокоить»
+            // её глушат, и остаётся только тихое уведомление.
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                v.vibrate(effect, VibrationAttributes.createForUsage(VibrationAttributes.USAGE_ALARM))
             } else {
                 @Suppress("DEPRECATION")
-                v.vibrate(pattern, 0)
+                v.vibrate(effect, alarmAudioAttributes())
             }
         }
 
@@ -33,16 +44,17 @@ object AlarmPlayer {
             val uri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
                 ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
             ringtone = RingtoneManager.getRingtone(context.applicationContext, uri)?.apply {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                    audioAttributes = AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_ALARM)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                        .build()
-                }
+                audioAttributes = alarmAudioAttributes()
                 play()
             }
         }
     }
+
+    private fun alarmAudioAttributes(): AudioAttributes =
+        AudioAttributes.Builder()
+            .setUsage(AudioAttributes.USAGE_ALARM)
+            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+            .build()
 
     @Synchronized
     fun stop() {

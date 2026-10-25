@@ -253,6 +253,13 @@ class SleepMonitorService : Service(), SensorEventListener {
             Intent(this, RingActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
+        // Если экран уже включён, Android показывает не полноэкранный будильник,
+        // а уведомление. Поэтому «Выключить» есть и прямо в нём.
+        val stop = PendingIntent.getService(
+            this, 1,
+            Intent(this, SleepMonitorService::class.java).setAction(ACTION_STOP),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
         return NotificationCompat.Builder(this, CHANNEL_RING)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle("Пора вставать")
@@ -262,6 +269,7 @@ class SleepMonitorService : Service(), SensorEventListener {
             .setOngoing(true)
             .setFullScreenIntent(full, true)
             .setContentIntent(full)
+            .addAction(0, "Выключить", stop)
             .build()
     }
 
