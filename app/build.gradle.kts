@@ -14,8 +14,10 @@ android {
         applicationId = "com.tranquilo.alarm"
         minSdk = 30
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
+        // Версия — дата выпуска в формате ГГММДД. Код и имя совпадают:
+        // так каждая следующая версия ставится поверх предыдущей.
+        versionCode = 261026
+        versionName = "261026"
     }
 
     // Фиксированный ключ: APK из любой сборки ставится поверх предыдущего без удаления.
@@ -30,6 +32,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     compileOptions {

@@ -1,9 +1,7 @@
 package com.tranquilo.alarm.ui
 
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -27,6 +25,7 @@ import androidx.wear.compose.material.Text
 import androidx.wear.compose.material.TimeText
 import androidx.wear.compose.material.Vignette
 import androidx.wear.compose.material.VignettePosition
+import com.tranquilo.alarm.BuildConfig
 import com.tranquilo.alarm.data.AlarmSettings
 import com.tranquilo.alarm.data.NightReport
 import java.time.Instant
@@ -66,12 +65,11 @@ fun MainScreen(
             item { StatusLine(settings) }
 
             item {
-                Chip(
-                    modifier = Modifier.fillMaxWidth(),
-                    onClick = { viewModel.toggleEnabled() },
-                    colors = if (settings.enabled) ChipDefaults.primaryChipColors()
-                    else ChipDefaults.secondaryChipColors(),
-                    label = { Text(if (settings.enabled) "Будильник включён" else "Будильник выключен") }
+                OptionChip(
+                    label = "Будильник",
+                    options = listOf("Выкл", "Вкл"),
+                    selected = if (settings.enabled) 1 else 0,
+                    onClick = { viewModel.toggleEnabled() }
                 )
             }
 
@@ -86,24 +84,32 @@ fun MainScreen(
             }
 
             item {
-                Chip(
-                    modifier = Modifier.fillMaxWidth(),
-                    onClick = { viewModel.cycleWindowLength() },
-                    colors = ChipDefaults.secondaryChipColors(),
-                    label = { Text("Длина окна") },
-                    secondaryLabel = { Text("${settings.windowMinutes} мин") }
+                OptionChip(
+                    label = "Длина окна (минут)",
+                    options = WINDOW_OPTIONS.map { it.toString() },
+                    selected = WINDOW_OPTIONS.indexOf(settings.windowMinutes).coerceAtLeast(0),
+                    onClick = { viewModel.cycleWindowLength() }
                 )
             }
 
-            item { SensitivityRow(settings.sensitivity, viewModel::setSensitivity) }
+            item {
+                OptionChip(
+                    label = "Чувствительность",
+                    options = (1..5).map { it.toString() },
+                    selected = settings.sensitivity - 1,
+                    onClick = {
+                        val s = settings.sensitivity
+                        viewModel.setSensitivity(if (s >= 5) 1 else s + 1)
+                    }
+                )
+            }
 
             item {
-                Chip(
-                    modifier = Modifier.fillMaxWidth(),
-                    onClick = { viewModel.toggleSound() },
-                    colors = ChipDefaults.secondaryChipColors(),
-                    label = { Text("Звук") },
-                    secondaryLabel = { Text(if (settings.soundEnabled) "Вибрация и звук" else "Только вибрация") }
+                OptionChip(
+                    label = "Сигнал",
+                    options = listOf("Вибрация", "Со звуком"),
+                    selected = if (settings.soundEnabled) 1 else 0,
+                    onClick = { viewModel.toggleSound() }
                 )
             }
 
@@ -120,9 +126,21 @@ fun MainScreen(
             }
 
             item { LastNight(report) }
+
+            item {
+                Text(
+                    text = "Версия ${BuildConfig.VERSION_NAME}",
+                    style = MaterialTheme.typography.caption3,
+                    color = MaterialTheme.colors.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp, bottom = 12.dp)
+                )
+            }
         }
     }
 }
+
+/** Варианты длины окна — в том же порядке, что и в MainViewModel.cycleWindowLength(). */
+private val WINDOW_OPTIONS = listOf(15, 30, 45)
 
 @Composable
 private fun StatusLine(settings: AlarmSettings) {
@@ -139,32 +157,6 @@ private fun StatusLine(settings: AlarmSettings) {
         textAlign = TextAlign.Center,
         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
     )
-}
-
-@Composable
-private fun SensitivityRow(value: Int, onChange: (Int) -> Unit) {
-    Chip(
-        modifier = Modifier.fillMaxWidth(),
-        onClick = { onChange(if (value >= 5) 1 else value + 1) },
-        colors = ChipDefaults.secondaryChipColors(),
-        label = { Text("Чувствительность") },
-        secondaryLabel = {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(2.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("$value из 5 · ${sensitivityHint(value)}")
-            }
-        }
-    )
-}
-
-private fun sensitivityHint(value: Int) = when (value) {
-    1 -> "будит позже"
-    2 -> "сдержанно"
-    3 -> "обычно"
-    4 -> "чутко"
-    else -> "будит раньше"
 }
 
 @Composable
