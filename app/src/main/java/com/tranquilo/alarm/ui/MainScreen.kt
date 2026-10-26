@@ -43,6 +43,7 @@ fun MainScreen(
 ) {
     val settings by viewModel.settings.collectAsState()
     val report by viewModel.report.collectAsState()
+    val bedtime by viewModel.bedtime.collectAsState()
     val listState = rememberScalingLazyListState()
 
     Scaffold(
@@ -63,6 +64,8 @@ fun MainScreen(
             }
 
             item { StatusLine(settings) }
+
+            item { BedtimeChip(bedtime, onClick = { viewModel.toggleBedtime() }) }
 
             item {
                 OptionChip(
@@ -141,6 +144,37 @@ fun MainScreen(
 
 /** Варианты длины окна — в том же порядке, что и в MainViewModel.cycleWindowLength(). */
 private val WINDOW_OPTIONS = listOf(15, 30, 45)
+
+/** «Лёг спать»: нажал — часы ищут момент засыпания; нажал ещё раз — отмена. */
+@Composable
+private fun BedtimeChip(state: BedtimeUi, onClick: () -> Unit) {
+    val since = state.activeSinceMs
+    val label: String
+    val hint: String
+    if (since != null) {
+        label = "Жду, когда уснёшь"
+        hint = "Лёг в ${fmt(timeOf(since))}. Отменить?"
+    } else {
+        label = "Лёг спать"
+        val last = state.last
+        hint = when {
+            last == null -> "Засеку, за сколько уснёшь"
+            last.latencyMin == null -> "Прошлый раз: не определилось"
+            else -> "Прошлый раз: ${last.latencyMin} мин"
+        }
+    }
+
+    Chip(
+        modifier = Modifier.fillMaxWidth(),
+        onClick = onClick,
+        colors = if (since != null) ChipDefaults.primaryChipColors() else ChipDefaults.secondaryChipColors(),
+        label = { Text(label, maxLines = 1) },
+        secondaryLabel = { Text(hint, maxLines = 1) }
+    )
+}
+
+private fun timeOf(ms: Long): LocalTime =
+    Instant.ofEpochMilli(ms).atZone(ZoneId.systemDefault()).toLocalTime()
 
 @Composable
 private fun StatusLine(settings: AlarmSettings) {

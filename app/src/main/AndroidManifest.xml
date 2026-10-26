@@ -67,6 +67,16 @@
                 tools:ignore="UnknownProperty" />
         </service>
 
+        <service
+            android:name=".service.BedtimeService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Поиск момента засыпания по движениям руки"
+                tools:ignore="UnknownProperty" />
+        </service>
+
         <receiver
             android:name=".alarm.AlarmReceiver"
             android:exported="false" />

@@ -307,7 +307,8 @@ class SleepMonitorService : Service(), SensorEventListener {
         const val ACTION_STOP = "com.tranquilo.alarm.service.STOP"
 
         private const val OLD_CHANNEL_MONITOR = "monitor"
-        private const val CHANNEL_MONITOR = "monitor_quiet"
+        /** Тихий канал: мониторинг утром и «Лёг спать» вечером. */
+        const val CHANNEL_MONITOR = "monitor_quiet"
         private const val CHANNEL_RING = "ring"
         private const val NOTIF_MONITOR_ID = 1
 

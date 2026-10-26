@@ -4,8 +4,11 @@ import android.app.Application
 import android.content.Intent
 import androidx.lifecycle.AndroidViewModel
 import com.tranquilo.alarm.alarm.AlarmScheduler
+import com.tranquilo.alarm.core.SleepOnsetDetector
+import com.tranquilo.alarm.service.BedtimeService
 import com.tranquilo.alarm.service.SleepMonitorService
 import com.tranquilo.alarm.data.AlarmSettings
+import com.tranquilo.alarm.data.BedtimeResult
 import com.tranquilo.alarm.data.NightReport
 import com.tranquilo.alarm.data.SettingsStore
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -22,9 +25,34 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val _report = MutableStateFlow(store.loadReport())
     val report: StateFlow<NightReport?> = _report.asStateFlow()
 
+    private val _bedtime = MutableStateFlow(loadBedtime())
+    val bedtime: StateFlow<BedtimeUi> = _bedtime.asStateFlow()
+
     fun refresh() {
         _settings.value = store.load()
         _report.value = store.loadReport()
+        _bedtime.value = loadBedtime()
+    }
+
+    /** «Лёг спать»: первое нажатие начинает поиск засыпания, повторное — отменяет. */
+    fun toggleBedtime() {
+        val app = getApplication<Application>()
+        if (_bedtime.value.activeSinceMs != null) {
+            store.cancelBedtime()
+            BedtimeService.cancel(app)
+        } else {
+            store.startBedtime(System.currentTimeMillis())
+            BedtimeService.start(app)
+        }
+        _bedtime.value = loadBedtime()
+    }
+
+    private fun loadBedtime(): BedtimeUi {
+        val since = store.bedtimeActiveSince()
+        // Сервис мог быть убит системой и не успеть снять отметку — считаем её устаревшей.
+        val alive = since > 0 &&
+            System.currentTimeMillis() - since < SleepOnsetDetector.MAX_SEARCH_MS + 10 * 60_000L
+        return BedtimeUi(activeSinceMs = since.takeIf { alive }, last = store.lastBedtime())
     }
 
     fun toggleEnabled() = update { it.copy(enabled = !it.enabled) }
@@ -57,3 +85,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 }
+
+/** Состояние «Лёг спать» для экрана: идёт ли поиск засыпания и чем закончился прошлый. */
+data class BedtimeUi(val activeSinceMs: Long?, val last: BedtimeResult?)

@@ -27,9 +27,13 @@ class MainActivity : ComponentActivity() {
     /** Есть ли полный доступ к пульсу. Обновляется при каждом возврате в приложение. */
     private var heartRateAccess by mutableStateOf(false)
 
+    /** Ссылка на ViewModel, чтобы обновлять экран при каждом возврате в приложение. */
+    private var viewModelRef: MainViewModel? = null
+
     override fun onResume() {
         super.onResume()
         heartRateAccess = HeartRateAccess.full(this)
+        viewModelRef?.refresh()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -38,6 +42,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             TranquiloTheme {
                 val vm: MainViewModel = viewModel()
+                viewModelRef = vm
                 val settings by vm.settings.collectAsState()
                 var editingTime by remember { mutableStateOf(false) }
 

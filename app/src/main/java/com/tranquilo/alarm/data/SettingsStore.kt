@@ -74,7 +74,50 @@ class SettingsStore(context: Context) {
 
     fun loadHandledDeadline(): Long = prefs.getLong(KEY_HANDLED_DEADLINE, 0L)
 
+    // --- «Лёг спать» -------------------------------------------------------
+
+    fun startBedtime(nowMs: Long) {
+        prefs.edit().putLong(KEY_BED_ACTIVE, nowMs).apply()
+    }
+
+    /** Когда нажали «Лёг спать», если поиск засыпания ещё идёт; иначе 0. */
+    fun bedtimeActiveSince(): Long = prefs.getLong(KEY_BED_ACTIVE, 0L)
+
+    fun cancelBedtime() {
+        prefs.edit().putLong(KEY_BED_ACTIVE, 0L).apply()
+    }
+
+    /** latencyMin = null — засыпание за отведённое время не нашлось. */
+    fun finishBedtime(bedtimeMs: Long, latencyMin: Int?) {
+        val history = if (latencyMin == null) latencyHistory()
+        else (latencyHistory() + latencyMin).takeLast(HISTORY_SIZE)
+        prefs.edit()
+            .putLong(KEY_BED_ACTIVE, 0L)
+            .putLong(KEY_BED_LAST_START, bedtimeMs)
+            .putInt(KEY_BED_LAST_LATENCY, latencyMin ?: -1)
+            .putString(KEY_BED_HISTORY, history.joinToString(","))
+            .apply()
+    }
+
+    fun lastBedtime(): BedtimeResult? {
+        val start = prefs.getLong(KEY_BED_LAST_START, 0L)
+        if (start == 0L) return null
+        val latency = prefs.getInt(KEY_BED_LAST_LATENCY, -1)
+        return BedtimeResult(start, latency.takeIf { it >= 0 })
+    }
+
+    /** Время засыпания за последние ночи, в минутах. Пригодится для «По норме сна». */
+    fun latencyHistory(): List<Int> =
+        prefs.getString(KEY_BED_HISTORY, null).orEmpty()
+            .split(",").mapNotNull { it.toIntOrNull() }
+
     private companion object {
+        const val HISTORY_SIZE = 14
+        const val KEY_BED_ACTIVE = "bedtime_active"
+        const val KEY_BED_LAST_START = "bedtime_last_start"
+        const val KEY_BED_LAST_LATENCY = "bedtime_last_latency"
+        const val KEY_BED_HISTORY = "bedtime_history"
+
         const val KEY_ENABLED = "enabled"
         const val KEY_END_HOUR = "end_hour"
         const val KEY_END_MINUTE = "end_minute"
