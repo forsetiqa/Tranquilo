@@ -149,28 +149,46 @@ private val WINDOW_OPTIONS = listOf(15, 30, 45)
 @Composable
 private fun BedtimeChip(state: BedtimeUi, onClick: () -> Unit) {
     val since = state.activeSinceMs
-    val label: String
-    val hint: String
     if (since != null) {
-        label = "Жду, когда уснёшь"
-        hint = "Лёг в ${fmt(timeOf(since))}. Отменить?"
-    } else {
-        label = "Лёг спать"
-        val last = state.last
-        hint = when {
-            last == null -> "Засеку, за сколько уснёшь"
-            last.latencyMin == null -> "Прошлый раз: не определилось"
-            else -> "Прошлый раз: ${last.latencyMin} мин"
-        }
+        InfoButton(
+            label = "Жду, когда уснёшь",
+            lines = listOf("Лёг в ${fmt(timeOf(since))}", "Нажми, чтобы отменить"),
+            highlighted = true,
+            onClick = onClick
+        )
+        return
     }
 
-    Chip(
-        modifier = Modifier.fillMaxWidth(),
-        onClick = onClick,
-        colors = if (since != null) ChipDefaults.primaryChipColors() else ChipDefaults.secondaryChipColors(),
-        label = { Text(label, maxLines = 1) },
-        secondaryLabel = { Text(hint, maxLines = 1) }
-    )
+    val last = state.last
+    val latency = last?.latencyMin
+    val onset = last?.onsetMs
+    val lines = buildList {
+        when {
+            last == null -> add("Засеку, за сколько уснёшь")
+            latency == null || onset == null -> {
+                add("Прошлый раз: не определилось")
+                add("Лёг в ${fmt(timeOf(last.bedtimeMs))}")
+            }
+            else -> {
+                add("Прошлый раз: $latency мин")
+                add("Лёг ${fmt(timeOf(last.bedtimeMs))}, уснул ${fmt(timeOf(onset))}")
+            }
+        }
+        state.typicalMin?.let { add("Обычно: $it мин (${state.nights} ${nightsWord(state.nights)})") }
+    }
+
+    InfoButton(label = "Лёг спать", lines = lines, highlighted = false, onClick = onClick)
+}
+
+private fun nightsWord(n: Int): String {
+    val mod100 = n % 100
+    val mod10 = n % 10
+    return when {
+        mod100 in 11..14 -> "ночей"
+        mod10 == 1 -> "ночь"
+        mod10 in 2..4 -> "ночи"
+        else -> "ночей"
+    }
 }
 
 private fun timeOf(ms: Long): LocalTime =

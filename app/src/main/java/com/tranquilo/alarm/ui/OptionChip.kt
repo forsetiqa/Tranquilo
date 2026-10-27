@@ -117,3 +117,44 @@ private fun Segments(options: List<String>, selected: Int) {
         }
     }
 }
+
+/**
+ * Кнопка с подписью и несколькими строками пояснения — в том же стиле, что и OptionChip.
+ * highlighted — светлый фон, когда что-то идёт прямо сейчас.
+ */
+@Composable
+fun InfoButton(
+    label: String,
+    lines: List<String>,
+    highlighted: Boolean,
+    onClick: () -> Unit
+) {
+    val colors = MaterialTheme.colors
+    val background = if (highlighted) colors.primary else colors.surface
+    val labelColor = if (highlighted) colors.onPrimary else colors.onSurface
+    val linesColor = if (highlighted) colors.onPrimary.copy(alpha = 0.8f)
+    else colors.onSurface.copy(alpha = 0.7f)
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(26.dp))
+            .background(background)
+            .clickable(role = Role.Button, onClick = onClick)
+            .padding(start = 14.dp, end = 14.dp, top = 8.dp, bottom = 10.dp)
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.button,
+            color = labelColor,
+            maxLines = 1
+        )
+        lines.forEach { line ->
+            Text(
+                text = line,
+                style = MaterialTheme.typography.caption2,
+                color = linesColor
+            )
+        }
+    }
+}

@@ -36,8 +36,11 @@ data class NightReport(
     val epochs: List<Epoch> = emptyList()
 )
 
-/** Итог «Лёг спать»: когда нажал кнопку и за сколько минут уснул (null — не определилось). */
-data class BedtimeResult(val bedtimeMs: Long, val latencyMin: Int?)
+/**
+ * Итог «Лёг спать»: когда нажал кнопку, за сколько минут уснул и в какой момент.
+ * latencyMin и onsetMs = null — засыпание не определилось.
+ */
+data class BedtimeResult(val bedtimeMs: Long, val latencyMin: Int?, val onsetMs: Long?)
 
 /**
  * Одна 30-секундная эпоха: сколько секунд оставалось до крайнего срока,

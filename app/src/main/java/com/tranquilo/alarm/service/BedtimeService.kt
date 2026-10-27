@@ -80,7 +80,7 @@ class BedtimeService : Service(), SensorEventListener {
         val sm = getSystemService(Context.SENSOR_SERVICE) as SensorManager
         val accelerometer = sm.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
         if (accelerometer == null) {
-            finish(latencyMin = null)
+            finish(onsetMs = null)
             return
         }
         sensorManager = sm
@@ -92,23 +92,23 @@ class BedtimeService : Service(), SensorEventListener {
         val now = System.currentTimeMillis()
 
         if (now - bedtimeMs > SleepOnsetDetector.MAX_SEARCH_MS) {
-            finish(latencyMin = null)
+            finish(onsetMs = null)
             return
         }
 
         val epoch = movement.addSample(now, event.values[0], event.values[1], event.values[2]) ?: return
         val onsetMs = d.addEpoch(now, epoch) ?: return
 
-        val minutes = ((onsetMs - bedtimeMs) / 60_000L).toInt().coerceAtLeast(0)
-        finish(latencyMin = minutes)
+        finish(onsetMs = onsetMs.coerceAtLeast(bedtimeMs))
     }
 
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
 
-    private fun finish(latencyMin: Int?) {
+    /** onsetMs = null — засыпание за отведённое время не нашлось. */
+    private fun finish(onsetMs: Long?) {
         if (detector == null) return
         detector = null
-        store.finishBedtime(bedtimeMs, latencyMin)
+        store.finishBedtime(bedtimeMs, onsetMs)
         stopEverything()
     }
 

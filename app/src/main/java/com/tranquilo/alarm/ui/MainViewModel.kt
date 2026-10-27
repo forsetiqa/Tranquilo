@@ -52,7 +52,20 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         // Сервис мог быть убит системой и не успеть снять отметку — считаем её устаревшей.
         val alive = since > 0 &&
             System.currentTimeMillis() - since < SleepOnsetDetector.MAX_SEARCH_MS + 10 * 60_000L
-        return BedtimeUi(activeSinceMs = since.takeIf { alive }, last = store.lastBedtime())
+        val history = store.latencyHistory()
+        // Медиана, а не среднее: одна бессонная ночь не перекосит «обычное» время.
+        val typical = history.takeIf { it.size >= MIN_NIGHTS_FOR_TYPICAL }
+            ?.sorted()?.let { it[it.size / 2] }
+        return BedtimeUi(
+            activeSinceMs = since.takeIf { alive },
+            last = store.lastBedtime(),
+            typicalMin = typical,
+            nights = history.size
+        )
+    }
+
+    private companion object {
+        const val MIN_NIGHTS_FOR_TYPICAL = 3
     }
 
     fun toggleEnabled() = update { it.copy(enabled = !it.enabled) }
@@ -86,5 +99,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 }
 
-/** Состояние «Лёг спать» для экрана: идёт ли поиск засыпания и чем закончился прошлый. */
-data class BedtimeUi(val activeSinceMs: Long?, val last: BedtimeResult?)
+/**
+ * Состояние «Лёг спать» для экрана: идёт ли поиск засыпания, чем закончился прошлый
+ * и сколько обычно засыпаешь (медиана, когда накопилось хотя бы 3 ночи).
+ */
+data class BedtimeUi(
+    val activeSinceMs: Long?,
+    val last: BedtimeResult?,
+    val typicalMin: Int?,
+    val nights: Int
+)

@@ -87,14 +87,16 @@ class SettingsStore(context: Context) {
         prefs.edit().putLong(KEY_BED_ACTIVE, 0L).apply()
     }
 
-    /** latencyMin = null — засыпание за отведённое время не нашлось. */
-    fun finishBedtime(bedtimeMs: Long, latencyMin: Int?) {
+    /** onsetMs = null — засыпание за отведённое время не нашлось. */
+    fun finishBedtime(bedtimeMs: Long, onsetMs: Long?) {
+        val latencyMin = onsetMs?.let { ((it - bedtimeMs) / 60_000L).toInt().coerceAtLeast(0) }
         val history = if (latencyMin == null) latencyHistory()
         else (latencyHistory() + latencyMin).takeLast(HISTORY_SIZE)
         prefs.edit()
             .putLong(KEY_BED_ACTIVE, 0L)
             .putLong(KEY_BED_LAST_START, bedtimeMs)
             .putInt(KEY_BED_LAST_LATENCY, latencyMin ?: -1)
+            .putLong(KEY_BED_LAST_ONSET, onsetMs ?: 0L)
             .putString(KEY_BED_HISTORY, history.joinToString(","))
             .apply()
     }
@@ -102,8 +104,11 @@ class SettingsStore(context: Context) {
     fun lastBedtime(): BedtimeResult? {
         val start = prefs.getLong(KEY_BED_LAST_START, 0L)
         if (start == 0L) return null
-        val latency = prefs.getInt(KEY_BED_LAST_LATENCY, -1)
-        return BedtimeResult(start, latency.takeIf { it >= 0 })
+        val latency = prefs.getInt(KEY_BED_LAST_LATENCY, -1).takeIf { it >= 0 }
+        // Версия 261026 момент засыпания не сохраняла — восстанавливаем по минутам.
+        val onset = prefs.getLong(KEY_BED_LAST_ONSET, 0L).takeIf { it > 0 }
+            ?: latency?.let { start + it * 60_000L }
+        return BedtimeResult(start, latency, onset)
     }
 
     /** Время засыпания за последние ночи, в минутах. Пригодится для «По норме сна». */
@@ -116,6 +121,7 @@ class SettingsStore(context: Context) {
         const val KEY_BED_ACTIVE = "bedtime_active"
         const val KEY_BED_LAST_START = "bedtime_last_start"
         const val KEY_BED_LAST_LATENCY = "bedtime_last_latency"
+        const val KEY_BED_LAST_ONSET = "bedtime_last_onset"
         const val KEY_BED_HISTORY = "bedtime_history"
 
         const val KEY_ENABLED = "enabled"
