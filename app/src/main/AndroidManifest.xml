@@ -70,10 +70,10 @@
         <service
             android:name=".service.BedtimeService"
             android:exported="false"
-            android:foregroundServiceType="specialUse">
+            android:foregroundServiceType="specialUse|health">
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="Поиск момента засыпания по движениям руки"
+                android:value="Поиск момента засыпания по движениям руки и пульсу"
                 tools:ignore="UnknownProperty" />
         </service>
 

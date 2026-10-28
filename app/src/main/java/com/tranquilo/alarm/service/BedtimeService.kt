@@ -25,7 +25,7 @@ import java.time.Instant
 import java.time.ZoneId
 
 /**
- * «Лёг спать»: следит за движениями, пока не найдёт момент засыпания,
+ * «Лёг спать»: следит за движениями и пульсом, пока не найдёт момент засыпания,
  * сохраняет, за сколько минут уснул, и сразу выключается.
  * С утренним мониторингом никак не связан и ему не мешает.
  */
@@ -38,6 +38,10 @@ class BedtimeService : Service(), SensorEventListener {
     private var detector: SleepOnsetDetector? = null
     private val movement = MovementAnalyzer(sensitivity = 3)
     private var bedtimeMs = 0L
+
+    // Пульс копим внутри текущей эпохи и передаём среднее вместе с движением.
+    private var hrSum = 0.0
+    private var hrCount = 0
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -85,6 +89,14 @@ class BedtimeService : Service(), SensorEventListener {
         }
         sensorManager = sm
         sm.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_NORMAL)
+
+        // Кнопку нажимают при открытом приложении, поэтому хватает обычного доступа к пульсу.
+        // Нет доступа или датчика — ищем засыпание только по движению.
+        if (HeartRateAccess.foreground(this)) {
+            sm.getDefaultSensor(Sensor.TYPE_HEART_RATE)?.let { hr ->
+                runCatching { sm.registerListener(this, hr, SensorManager.SENSOR_DELAY_NORMAL) }
+            }
+        }
     }
 
     override fun onSensorChanged(event: SensorEvent) {
@@ -96,8 +108,20 @@ class BedtimeService : Service(), SensorEventListener {
             return
         }
 
+        if (event.sensor.type == Sensor.TYPE_HEART_RATE) {
+            val bpm = event.values.firstOrNull() ?: 0f
+            if (event.accuracy >= SensorManager.SENSOR_STATUS_ACCURACY_LOW && bpm > 0f) {
+                hrSum += bpm
+                hrCount++
+            }
+            return
+        }
+
         val epoch = movement.addSample(now, event.values[0], event.values[1], event.values[2]) ?: return
-        val onsetMs = d.addEpoch(now, epoch) ?: return
+        val hr = if (hrCount > 0) (hrSum / hrCount).toFloat() else 0f
+        hrSum = 0.0
+        hrCount = 0
+        val onsetMs = d.addEpoch(now, epoch, hr) ?: return
 
         finish(onsetMs = onsetMs.coerceAtLeast(bedtimeMs))
     }
@@ -130,9 +154,9 @@ class BedtimeService : Service(), SensorEventListener {
     private fun goForeground() {
         val notification = notification()
         if (Build.VERSION.SDK_INT >= 34) {
-            ServiceCompat.startForeground(
-                this, NOTIF_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
-            )
+            var type = ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+            if (HeartRateAccess.foreground(this)) type = type or ServiceInfo.FOREGROUND_SERVICE_TYPE_HEALTH
+            ServiceCompat.startForeground(this, NOTIF_ID, notification, type)
         } else {
             startForeground(NOTIF_ID, notification)
         }
