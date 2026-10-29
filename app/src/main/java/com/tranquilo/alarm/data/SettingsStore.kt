@@ -88,8 +88,9 @@ class SettingsStore(context: Context) {
     }
 
     /** onsetMs = null — засыпание за отведённое время не нашлось. */
-    fun finishBedtime(bedtimeMs: Long, onsetMs: Long?) {
-        val latencyMin = onsetMs?.let { ((it - bedtimeMs) / 60_000L).toInt().coerceAtLeast(0) }
+    fun finishBedtime(bedtimeMs: Long, onsetMs: Long?, epochs: List<EveningEpoch>) {
+        // Считаем по целым минутам на часах, чтобы «лёг 00:21, уснул 00:23» давало 2 мин, а не 1.
+        val latencyMin = onsetMs?.let { (it / 60_000L - bedtimeMs / 60_000L).toInt().coerceAtLeast(0) }
         val history = if (latencyMin == null) latencyHistory()
         else (latencyHistory() + latencyMin).takeLast(HISTORY_SIZE)
         prefs.edit()
@@ -98,6 +99,10 @@ class SettingsStore(context: Context) {
             .putInt(KEY_BED_LAST_LATENCY, latencyMin ?: -1)
             .putLong(KEY_BED_LAST_ONSET, onsetMs ?: 0L)
             .putString(KEY_BED_HISTORY, history.joinToString(","))
+            .putString(
+                KEY_BED_EPOCHS,
+                epochs.joinToString(",") { "${it.secondsFromBedtime}:${it.value}:${it.hr}" }
+            )
             .apply()
     }
 
@@ -108,8 +113,18 @@ class SettingsStore(context: Context) {
         // Версия 261026 момент засыпания не сохраняла — восстанавливаем по минутам.
         val onset = prefs.getLong(KEY_BED_LAST_ONSET, 0L).takeIf { it > 0 }
             ?: latency?.let { start + it * 60_000L }
-        return BedtimeResult(start, latency, onset)
+        return BedtimeResult(start, latency, onset, parseEveningEpochs(prefs.getString(KEY_BED_EPOCHS, null)))
     }
+
+    private fun parseEveningEpochs(raw: String?): List<EveningEpoch> =
+        raw.orEmpty().split(",").mapNotNull { item ->
+            val parts = item.split(":")
+            if (parts.size != 3) return@mapNotNull null
+            val seconds = parts[0].toIntOrNull() ?: return@mapNotNull null
+            val value = parts[1].toFloatOrNull() ?: return@mapNotNull null
+            val hr = parts[2].toFloatOrNull() ?: return@mapNotNull null
+            EveningEpoch(seconds, value, hr)
+        }
 
     /** Время засыпания за последние ночи, в минутах. Пригодится для «По норме сна». */
     fun latencyHistory(): List<Int> =
@@ -122,6 +137,7 @@ class SettingsStore(context: Context) {
         const val KEY_BED_LAST_START = "bedtime_last_start"
         const val KEY_BED_LAST_LATENCY = "bedtime_last_latency"
         const val KEY_BED_LAST_ONSET = "bedtime_last_onset"
+        const val KEY_BED_EPOCHS = "bedtime_epochs"
         const val KEY_BED_HISTORY = "bedtime_history"
 
         const val KEY_ENABLED = "enabled"

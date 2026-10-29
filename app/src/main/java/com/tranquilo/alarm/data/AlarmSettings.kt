@@ -40,7 +40,16 @@ data class NightReport(
  * Итог «Лёг спать»: когда нажал кнопку, за сколько минут уснул и в какой момент.
  * latencyMin и onsetMs = null — засыпание не определилось.
  */
-data class BedtimeResult(val bedtimeMs: Long, val latencyMin: Int?, val onsetMs: Long?)
+data class BedtimeResult(
+    val bedtimeMs: Long,
+    val latencyMin: Int?,
+    val onsetMs: Long?,
+    /** Движения и пульс от нажатия до конца поиска — для графика вечера. */
+    val epochs: List<EveningEpoch> = emptyList()
+)
+
+/** Одна 30-секундная эпоха вечера: секунд от «Лёг спать», сила движения, средний пульс (0 — нет). */
+data class EveningEpoch(val secondsFromBedtime: Int, val value: Float, val hr: Float)
 
 /**
  * Одна 30-секундная эпоха: сколько секунд оставалось до крайнего срока,

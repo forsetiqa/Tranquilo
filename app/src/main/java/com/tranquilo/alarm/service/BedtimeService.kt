@@ -20,6 +20,7 @@ import androidx.core.content.ContextCompat
 import com.tranquilo.alarm.R
 import com.tranquilo.alarm.core.MovementAnalyzer
 import com.tranquilo.alarm.core.SleepOnsetDetector
+import com.tranquilo.alarm.data.EveningEpoch
 import com.tranquilo.alarm.data.SettingsStore
 import java.time.Instant
 import java.time.ZoneId
@@ -42,6 +43,9 @@ class BedtimeService : Service(), SensorEventListener {
     // Пульс копим внутри текущей эпохи и передаём среднее вместе с движением.
     private var hrSum = 0.0
     private var hrCount = 0
+
+    /** Все эпохи вечера — сохраняются вместе с результатом для графика. */
+    private val eveningLog = ArrayList<EveningEpoch>()
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -121,6 +125,7 @@ class BedtimeService : Service(), SensorEventListener {
         val hr = if (hrCount > 0) (hrSum / hrCount).toFloat() else 0f
         hrSum = 0.0
         hrCount = 0
+        eveningLog.add(EveningEpoch(((now - bedtimeMs) / 1000).toInt(), epoch.toFloat(), hr))
         val onsetMs = d.addEpoch(now, epoch, hr) ?: return
 
         finish(onsetMs = onsetMs.coerceAtLeast(bedtimeMs))
@@ -132,7 +137,7 @@ class BedtimeService : Service(), SensorEventListener {
     private fun finish(onsetMs: Long?) {
         if (detector == null) return
         detector = null
-        store.finishBedtime(bedtimeMs, onsetMs)
+        store.finishBedtime(bedtimeMs, onsetMs, eveningLog.toList())
         stopEverything()
     }
 

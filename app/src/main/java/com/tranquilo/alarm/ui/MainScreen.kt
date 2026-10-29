@@ -27,6 +27,7 @@ import androidx.wear.compose.material.Vignette
 import androidx.wear.compose.material.VignettePosition
 import com.tranquilo.alarm.BuildConfig
 import com.tranquilo.alarm.data.AlarmSettings
+import com.tranquilo.alarm.data.BedtimeResult
 import com.tranquilo.alarm.data.NightReport
 import java.time.Instant
 import java.time.LocalTime
@@ -128,6 +129,8 @@ fun MainScreen(
                 )
             }
 
+            item { EveningReport(bedtime.last) }
+
             item { LastNight(report) }
 
             item {
@@ -209,6 +212,88 @@ private fun StatusLine(settings: AlarmSettings) {
         textAlign = TextAlign.Center,
         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
     )
+}
+
+/** Вечер: что было от «Лёг спать» до засыпания — движения, пульс и найденный момент. */
+@Composable
+private fun EveningReport(last: BedtimeResult?) {
+    if (last == null || last.epochs.isEmpty()) return
+
+    val onset = last.onsetMs
+    val title = if (onset != null) {
+        "Вечер: лёг ${fmt(timeOf(last.bedtimeMs))}, уснул ${fmt(timeOf(onset))}."
+    } else {
+        "Вечер: лёг ${fmt(timeOf(last.bedtimeMs))}, засыпание не определилось."
+    }
+
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.caption3,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+        )
+        EveningChart(last)
+        Text(
+            text = "Столбики — движения, красная линия — пульс, синяя черта — засыпание.",
+            style = MaterialTheme.typography.caption3,
+            color = MaterialTheme.colors.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+        )
+    }
+}
+
+@Composable
+private fun EveningChart(last: BedtimeResult) {
+    val barColor = MaterialTheme.colors.onSurface.copy(alpha = 0.45f)
+    val onsetColor = MaterialTheme.colors.primary
+    val pulseColor = Color(0xFFE08A8A)
+
+    val epochs = last.epochs
+    val total = max(epochs.maxOf { it.secondsFromBedtime }, 600).toFloat()
+    val top = max(epochs.maxOf { it.value }, 0.5f)
+    fun scale(v: Float) = sqrt((v / top).coerceIn(0f, 1f))
+    val onsetSeconds = last.onsetMs?.let { ((it - last.bedtimeMs) / 1000).toFloat() }
+
+    Canvas(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp)
+            .height(44.dp)
+    ) {
+        val w = size.width
+        val h = size.height
+        fun x(seconds: Float) = w * (seconds / total)
+
+        val barWidth = max(1.5f, w / (total / 30f) * 0.7f)
+        epochs.forEach { e ->
+            val ex = x(e.secondsFromBedtime.toFloat())
+            drawLine(barColor, Offset(ex, h), Offset(ex, h - h * scale(e.value)), strokeWidth = barWidth)
+        }
+
+        val withHr = epochs.filter { it.hr > 0f }
+        if (withHr.size >= 2) {
+            val lo = withHr.minOf { it.hr }
+            val hi = max(withHr.maxOf { it.hr }, lo + 10f)
+            fun hy(hr: Float) = h * (0.9f - 0.8f * (hr - lo) / (hi - lo))
+            withHr.zipWithNext { a, b ->
+                if (b.secondsFromBedtime - a.secondsFromBedtime <= 120) {
+                    drawLine(
+                        pulseColor,
+                        Offset(x(a.secondsFromBedtime.toFloat()), hy(a.hr)),
+                        Offset(x(b.secondsFromBedtime.toFloat()), hy(b.hr)),
+                        strokeWidth = 2f
+                    )
+                }
+            }
+        }
+
+        onsetSeconds?.let {
+            val ox = x(it)
+            drawLine(onsetColor, Offset(ox, 0f), Offset(ox, h), strokeWidth = 3f)
+        }
+    }
 }
 
 @Composable
