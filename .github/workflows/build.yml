@@ -33,12 +33,30 @@ jobs:
           path: app/build/outputs/apk/debug/app-debug.apk
 
       # APK одной ссылкой: Releases → latest → Tranquilo.apk
+      # Заголовок — версия из build.gradle.kts, описание — раздел этой версии из CHANGELOG.md.
       - name: Publish to "latest" release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           cp app/build/outputs/apk/debug/app-debug.apk Tranquilo.apk
+
+          VERSION=$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts || true)
+          VERSION=${VERSION:-"сборка ${{ github.run_number }}"}
+
+          awk -v header="## $VERSION" '
+            $0 == header { found = 1; next }
+            /^## / && found { exit }
+            found { print }
+          ' CHANGELOG.md > notes.md || true
+          if ! grep -q '[^[:space:]]' notes.md; then
+            echo "Описание этой версии в CHANGELOG пока не добавлено." > notes.md
+          fi
+          {
+            echo ""
+            echo "[Все изменения](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) · сборка ${{ github.run_number }} · коммит ${{ github.sha }}"
+          } >> notes.md
+
           gh release delete latest --yes --cleanup-tag || true
           gh release create latest Tranquilo.apk \
-            --title "Tranquilo (сборка ${{ github.run_number }})" \
-            --notes "Коммит ${{ github.sha }}"
+            --title "Tranquilo $VERSION" \
+            --notes-file notes.md
