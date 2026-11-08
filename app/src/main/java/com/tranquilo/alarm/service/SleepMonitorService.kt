@@ -24,6 +24,8 @@ import com.tranquilo.alarm.alarm.AlarmScheduler
 import com.tranquilo.alarm.core.MovementAnalyzer
 import com.tranquilo.alarm.data.AlarmSettings
 import com.tranquilo.alarm.data.Epoch
+import com.tranquilo.alarm.data.Journal
+import com.tranquilo.alarm.data.JournalEvent
 import com.tranquilo.alarm.data.NightReport
 import com.tranquilo.alarm.data.SettingsStore
 import java.time.LocalTime
@@ -34,6 +36,7 @@ class SleepMonitorService : Service(), SensorEventListener {
 
     private lateinit var settings: AlarmSettings
     private lateinit var store: SettingsStore
+    private lateinit var journal: Journal
 
     private var sensorManager: SensorManager? = null
     private var wakeLock: PowerManager.WakeLock? = null
@@ -55,6 +58,7 @@ class SleepMonitorService : Service(), SensorEventListener {
     override fun onCreate() {
         super.onCreate()
         store = SettingsStore(this)
+        journal = Journal(this)
         settings = store.load()
         createChannels()
     }
@@ -66,15 +70,31 @@ class SleepMonitorService : Service(), SensorEventListener {
                 ring(smart = false)
             }
             ACTION_STOP -> {
+                logDismiss(intent.getStringExtra(EXTRA_SOURCE))
                 stopEverything()
                 return START_NOT_STICKY
             }
             else -> {
+                // Уже звоним — не подменяем уведомление звонка уведомлением мониторинга.
+                if (ringing) return START_STICKY
                 goForeground(monitorNotification())
                 startMonitoring()
             }
         }
         return START_STICKY
+    }
+
+    /** К какому утру относятся события: срок этого мониторинга или ожидаемый срок из журнала. */
+    private fun deadlineKey(): Long =
+        windowEndMs.takeIf { it > 0 }
+            ?: store.loadHandledDeadline().takeIf { it > 0 && System.currentTimeMillis() - it < 12 * 60 * 60_000L }
+            ?: journal.expectedDeadline().takeIf { it > 0 }
+            ?: System.currentTimeMillis()
+
+    private fun logDismiss(source: String?) {
+        val event = if (source == SOURCE_NOTIFICATION) JournalEvent.DISMISSED_NOTIFICATION
+        else JournalEvent.DISMISSED_SCREEN
+        journal.log(deadlineKey(), settings.windowMinutes, event)
     }
 
     // --- мониторинг ---------------------------------------------------------
@@ -85,6 +105,7 @@ class SleepMonitorService : Service(), SensorEventListener {
         windowEndMs = nextOccurrence(settings.windowEnd)
         windowStartMs = windowEndMs - settings.windowMinutes * 60_000L
         analyzer = MovementAnalyzer(settings.sensitivity)
+        journal.log(windowEndMs, settings.windowMinutes, JournalEvent.MONITOR_STARTED)
 
         val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
         val timeout = max(60_000L, windowEndMs - System.currentTimeMillis() + 120_000L)
@@ -181,9 +202,16 @@ class SleepMonitorService : Service(), SensorEventListener {
                 epochs = epochLog.toList()
             )
         )
+        val key = deadlineKey()
+        journal.log(key, settings.windowMinutes, if (smart) JournalEvent.RANG_SMART else JournalEvent.RANG_END)
+
         // Запоминаем, что на этот крайний срок уже прозвонили, — чтобы после
         // «Выключить» мониторинг не запустился снова до того же срока.
-        if (windowEndMs > 0L) store.saveHandledDeadline(windowEndMs)
+        store.saveHandledDeadline(key)
+
+        // Сразу ставим будильник на следующее утро. Раньше это делалось только после
+        // «Выключить»: если звонок прерывался иначе, следующие утра оставались без будильника.
+        AlarmScheduler.schedule(this, store.load())
 
         AlarmPlayer.start(this, settings.soundEnabled)
         goForeground(ringNotification())
@@ -257,7 +285,9 @@ class SleepMonitorService : Service(), SensorEventListener {
         // а уведомление. Поэтому «Выключить» есть и прямо в нём.
         val stop = PendingIntent.getService(
             this, 1,
-            Intent(this, SleepMonitorService::class.java).setAction(ACTION_STOP),
+            Intent(this, SleepMonitorService::class.java)
+                .setAction(ACTION_STOP)
+                .putExtra(EXTRA_SOURCE, SOURCE_NOTIFICATION),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         return NotificationCompat.Builder(this, CHANNEL_RING)
@@ -312,6 +342,10 @@ class SleepMonitorService : Service(), SensorEventListener {
         private const val CHANNEL_RING = "ring"
         private const val NOTIF_MONITOR_ID = 1
 
+        private const val EXTRA_SOURCE = "source"
+        private const val SOURCE_NOTIFICATION = "notification"
+
+        /** «Выключить» на экране будильника. */
         fun stop(context: Context) {
             context.startService(
                 Intent(context, SleepMonitorService::class.java).setAction(ACTION_STOP)

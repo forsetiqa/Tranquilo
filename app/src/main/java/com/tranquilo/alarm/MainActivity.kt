@@ -17,6 +17,7 @@ import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.tranquilo.alarm.service.HeartRateAccess
+import com.tranquilo.alarm.ui.JournalScreen
 import com.tranquilo.alarm.ui.MainScreen
 import com.tranquilo.alarm.ui.MainViewModel
 import com.tranquilo.alarm.ui.TimeEditScreen
@@ -45,6 +46,8 @@ class MainActivity : ComponentActivity() {
                 viewModelRef = vm
                 val settings by vm.settings.collectAsState()
                 var editingTime by remember { mutableStateOf(false) }
+                var showingJournal by remember { mutableStateOf(false) }
+                val mornings by vm.mornings.collectAsState()
 
                 // Шаг 2: пульс в фоне (Android 13+). Датчик включается ночью по будильнику.
                 val backgroundLauncher = rememberLauncherForActivityResult(
@@ -83,7 +86,9 @@ class MainActivity : ComponentActivity() {
                     requestAll()
                 }
 
-                if (editingTime) {
+                if (showingJournal) {
+                    JournalScreen(mornings = mornings, onBack = { showingJournal = false })
+                } else if (editingTime) {
                     TimeEditScreen(
                         initialHour = settings.windowEndHour,
                         initialMinute = settings.windowEndMinute
@@ -96,7 +101,8 @@ class MainActivity : ComponentActivity() {
                         viewModel = vm,
                         heartRateAccess = heartRateAccess,
                         onRequestHeartRate = { requestAll() },
-                        onEditTime = { editingTime = true }
+                        onEditTime = { editingTime = true },
+                        onOpenJournal = { showingJournal = true }
                     )
                 }
             }

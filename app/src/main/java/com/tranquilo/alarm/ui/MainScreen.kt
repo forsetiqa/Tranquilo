@@ -28,6 +28,7 @@ import androidx.wear.compose.material.VignettePosition
 import com.tranquilo.alarm.BuildConfig
 import com.tranquilo.alarm.data.AlarmSettings
 import com.tranquilo.alarm.data.BedtimeResult
+import com.tranquilo.alarm.data.Morning
 import com.tranquilo.alarm.data.NightReport
 import java.time.Instant
 import java.time.LocalTime
@@ -40,11 +41,13 @@ fun MainScreen(
     viewModel: MainViewModel,
     heartRateAccess: Boolean,
     onRequestHeartRate: () -> Unit,
-    onEditTime: () -> Unit
+    onEditTime: () -> Unit,
+    onOpenJournal: () -> Unit
 ) {
     val settings by viewModel.settings.collectAsState()
     val report by viewModel.report.collectAsState()
     val bedtime by viewModel.bedtime.collectAsState()
+    val mornings by viewModel.mornings.collectAsState()
     val listState = rememberScalingLazyListState()
 
     Scaffold(
@@ -133,6 +136,8 @@ fun MainScreen(
 
             item { LastNight(report) }
 
+            item { JournalChip(mornings, onOpenJournal) }
+
             item {
                 Text(
                     text = "Версия ${BuildConfig.VERSION_NAME}",
@@ -181,6 +186,24 @@ private fun BedtimeChip(state: BedtimeUi, onClick: () -> Unit) {
     }
 
     InfoButton(label = "Лёг спать", lines = lines, highlighted = false, onClick = onClick)
+}
+
+/** Кнопка журнала: как прошло последнее утро и сколько было сбоев. */
+@Composable
+private fun JournalChip(mornings: List<Morning>, onClick: () -> Unit) {
+    val lines = buildList {
+        val last = mornings.firstOrNull()
+        if (last == null) {
+            add("Заполнится после первого утра")
+        } else {
+            add("${dayLabel(last.deadlineMs)}: ${morningSummary(last)}")
+            val problems = mornings.count { it.hasProblem }
+            if (problems > 0) {
+                add("Сбои: $problems из ${mornings.size} ${morningsWord(mornings.size)}")
+            }
+        }
+    }
+    InfoButton(label = "Журнал", lines = lines, highlighted = false, onClick = onClick)
 }
 
 private fun nightsWord(n: Int): String {
@@ -247,7 +270,8 @@ private fun EveningReport(last: BedtimeResult?) {
 @Composable
 private fun EveningChart(last: BedtimeResult) {
     val barColor = MaterialTheme.colors.onSurface.copy(alpha = 0.45f)
-    val onsetColor = MaterialTheme.colors.primary
+    // Насыщенный синий, а не бледный primary: черту должно быть видно и на низкой яркости.
+    val onsetColor = Color(0xFF3DA5FF)
     val pulseColor = Color(0xFFE08A8A)
 
     val epochs = last.epochs
@@ -291,7 +315,9 @@ private fun EveningChart(last: BedtimeResult) {
 
         onsetSeconds?.let {
             val ox = x(it)
-            drawLine(onsetColor, Offset(ox, 0f), Offset(ox, h), strokeWidth = 3f)
+            val dot = 3.dp.toPx()
+            drawLine(onsetColor, Offset(ox, dot), Offset(ox, h), strokeWidth = 2.5.dp.toPx())
+            drawCircle(onsetColor, radius = dot, center = Offset(ox, dot))
         }
     }
 }

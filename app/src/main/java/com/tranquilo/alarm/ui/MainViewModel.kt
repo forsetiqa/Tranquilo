@@ -9,6 +9,8 @@ import com.tranquilo.alarm.service.BedtimeService
 import com.tranquilo.alarm.service.SleepMonitorService
 import com.tranquilo.alarm.data.AlarmSettings
 import com.tranquilo.alarm.data.BedtimeResult
+import com.tranquilo.alarm.data.Journal
+import com.tranquilo.alarm.data.Morning
 import com.tranquilo.alarm.data.NightReport
 import com.tranquilo.alarm.data.SettingsStore
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -28,10 +30,20 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val _bedtime = MutableStateFlow(loadBedtime())
     val bedtime: StateFlow<BedtimeUi> = _bedtime.asStateFlow()
 
+    private val journal = Journal(app)
+
+    private val _mornings = MutableStateFlow(journal.mornings())
+    val mornings: StateFlow<List<Morning>> = _mornings.asStateFlow()
+
     fun refresh() {
-        _settings.value = store.load()
+        val settings = store.load()
+        // Страховка: при каждом открытии приложения заново ставим будильник.
+        // Если расписание где-то потерялось — восстановится. Заодно журнал отметит сбои.
+        AlarmScheduler.schedule(getApplication<Application>(), settings)
+        _settings.value = settings
         _report.value = store.loadReport()
         _bedtime.value = loadBedtime()
+        _mornings.value = journal.mornings()
     }
 
     /** «Лёг спать»: первое нажатие начинает поиск засыпания, повторное — отменяет. */

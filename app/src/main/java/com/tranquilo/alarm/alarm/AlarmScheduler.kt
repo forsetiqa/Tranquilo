@@ -6,6 +6,8 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import com.tranquilo.alarm.data.AlarmSettings
+import com.tranquilo.alarm.data.Journal
+import com.tranquilo.alarm.data.JournalEvent
 import com.tranquilo.alarm.data.SettingsStore
 import java.time.Instant
 import java.time.LocalTime
@@ -21,8 +23,20 @@ object AlarmScheduler {
 
     /** Ставит два будильника: включение датчика и запасной звонок в конце окна. */
     fun schedule(context: Context, settings: AlarmSettings) {
+        val journal = Journal(context)
+        // Сначала отмечаем сбои прошедших утр — пока «ожидаемое утро» ещё прежнее.
+        journal.checkProblems()
+
         cancelAll(context)
-        if (!settings.enabled) return
+        if (!settings.enabled) {
+            // Выключили посреди утра — помечаем, чтобы журнал не записал это в сбои.
+            val expected = journal.expectedDeadline()
+            if (expected > 0 && journal.mornings().any { it.deadlineMs == expected }) {
+                journal.log(expected, journal.expectedWindow(), JournalEvent.DISABLED)
+            }
+            journal.clearExpected()
+            return
+        }
 
         val now = System.currentTimeMillis()
         var endMs = nextOccurrence(settings.windowEnd, now)
@@ -40,6 +54,7 @@ object AlarmScheduler {
 
         setExact(context, startAt, pendingIntent(context, ACTION_START_MONITOR, RC_MONITOR))
         setExact(context, endMs, pendingIntent(context, ACTION_RING, RC_RING))
+        journal.setExpected(endMs, settings.windowMinutes)
     }
 
     fun cancelBackupRing(context: Context) {
