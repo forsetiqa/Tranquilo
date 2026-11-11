@@ -9,6 +9,7 @@ enum class JournalEvent(val label: String, val problem: Boolean = false) {
     MONITOR_STARTED("датчик включился"),
     RANG_SMART("звонок по движению"),
     RANG_END("звонок в конце окна"),
+    VIBRATION_STARTED("вибрация включилась"),
     DISMISSED_SCREEN("выключен кнопкой"),
     DISMISSED_NOTIFICATION("выключен из уведомления"),
     DISABLED("будильник выключен в настройках"),

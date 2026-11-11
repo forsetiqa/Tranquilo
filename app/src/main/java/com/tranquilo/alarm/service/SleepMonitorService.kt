@@ -40,6 +40,8 @@ class SleepMonitorService : Service(), SensorEventListener {
 
     private var sensorManager: SensorManager? = null
     private var wakeLock: PowerManager.WakeLock? = null
+    /** Не даёт часам уснуть, пока звонок не выключат. */
+    private var ringLock: PowerManager.WakeLock? = null
     private var analyzer: MovementAnalyzer? = null
 
     private var windowStartMs = 0L
@@ -66,6 +68,7 @@ class SleepMonitorService : Service(), SensorEventListener {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_RING -> {
+                holdAwakeWhileRinging()
                 goForeground(ringNotification())
                 ring(smart = false)
             }
@@ -186,24 +189,35 @@ class SleepMonitorService : Service(), SensorEventListener {
     private fun ring(smart: Boolean) {
         if (ringing) return
         ringing = true
+        val rangAt = System.currentTimeMillis()
+
+        // Сначала — запрет засыпать и вибрация, всё остальное потом. Раньше часы отпускались
+        // в сон в начале звонка, и на спящих часах код замирал до вибрации: 11 ноября звонок
+        // в 08:00 дошёл до руки только в 08:25, после касания экрана.
+        holdAwakeWhileRinging()
+        AlarmPlayer.start(this, settings.soundEnabled)
+        val vibratingAt = System.currentTimeMillis()
+        goForeground(ringNotification())
 
         releaseSensors()
         AlarmScheduler.cancelBackupRing(this)
+        val key = deadlineKey()
 
         val a = analyzer
         store.saveReport(
             NightReport(
-                ringedAtMillis = System.currentTimeMillis(),
+                ringedAtMillis = rangAt,
                 smart = smart,
                 baseline = a?.baseline ?: 0.0,
                 threshold = a?.threshold?.takeIf { it != Double.MAX_VALUE } ?: 0.0,
                 peak = peak,
                 windowMinutes = settings.windowMinutes,
-                epochs = epochLog.toList()
+                epochs = epochLog.toList(),
+                windowEndMs = key
             )
         )
-        val key = deadlineKey()
-        journal.log(key, settings.windowMinutes, if (smart) JournalEvent.RANG_SMART else JournalEvent.RANG_END)
+        journal.log(key, settings.windowMinutes, if (smart) JournalEvent.RANG_SMART else JournalEvent.RANG_END, rangAt)
+        journal.log(key, settings.windowMinutes, JournalEvent.VIBRATION_STARTED, vibratingAt)
 
         // Запоминаем, что на этот крайний срок уже прозвонили, — чтобы после
         // «Выключить» мониторинг не запустился снова до того же срока.
@@ -212,9 +226,6 @@ class SleepMonitorService : Service(), SensorEventListener {
         // Сразу ставим будильник на следующее утро. Раньше это делалось только после
         // «Выключить»: если звонок прерывался иначе, следующие утра оставались без будильника.
         AlarmScheduler.schedule(this, store.load())
-
-        AlarmPlayer.start(this, settings.soundEnabled)
-        goForeground(ringNotification())
 
         // На части прошивок активность из фона не запускается — тогда сработает
         // полноэкранное уведомление выше.
@@ -229,11 +240,26 @@ class SleepMonitorService : Service(), SensorEventListener {
     private fun stopEverything() {
         releaseSensors()
         AlarmPlayer.stop()
+        releaseRingLock()
         // Ставим будильник на следующие сутки. Сегодняшний срок AlarmScheduler
         // пропустит сам: он уже отмечен в ring() как отработанный.
         AlarmScheduler.schedule(this, store.load())
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
         stopSelf()
+    }
+
+    private fun holdAwakeWhileRinging() {
+        if (ringLock?.isHeld == true) return
+        val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+        ringLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "tranquilo:ring").apply {
+            setReferenceCounted(false)
+            acquire(RING_MAX_MS)
+        }
+    }
+
+    private fun releaseRingLock() {
+        ringLock?.let { if (it.isHeld) it.release() }
+        ringLock = null
     }
 
     private fun releaseSensors() {
@@ -246,6 +272,7 @@ class SleepMonitorService : Service(), SensorEventListener {
     override fun onDestroy() {
         releaseSensors()
         AlarmPlayer.stop()
+        releaseRingLock()
         super.onDestroy()
     }
 
@@ -341,6 +368,8 @@ class SleepMonitorService : Service(), SensorEventListener {
         const val CHANNEL_MONITOR = "monitor_quiet"
         private const val CHANNEL_RING = "ring"
         private const val NOTIF_MONITOR_ID = 1
+        /** Дольше часа звонок часы бодрствующими не держит — бережём батарею. */
+        private const val RING_MAX_MS = 60 * 60_000L
 
         private const val EXTRA_SOURCE = "source"
         private const val SOURCE_NOTIFICATION = "notification"

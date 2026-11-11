@@ -10,6 +10,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -31,8 +32,12 @@ import com.tranquilo.alarm.data.BedtimeResult
 import com.tranquilo.alarm.data.Morning
 import com.tranquilo.alarm.data.NightReport
 import java.time.Instant
+import java.time.LocalDate
+import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 import kotlin.math.max
 import kotlin.math.sqrt
 
@@ -134,7 +139,7 @@ fun MainScreen(
 
             item { EveningReport(bedtime.last) }
 
-            item { LastNight(report) }
+            item { LastNight(report, settings.windowEnd) }
 
             item { JournalChip(mornings, onOpenJournal) }
 
@@ -242,14 +247,21 @@ private fun StatusLine(settings: AlarmSettings) {
 private fun EveningReport(last: BedtimeResult?) {
     if (last == null || last.epochs.isEmpty()) return
 
+    val night = nightOf(last.bedtimeMs)
+    val stale = night < lastCompletedNight()
     val onset = last.onsetMs
+    val head = "Вечер, ${DATE_FORMAT.format(night)}: лёг ${fmt(timeOf(last.bedtimeMs))}"
     val title = if (onset != null) {
-        "Вечер: лёг ${fmt(timeOf(last.bedtimeMs))}, уснул ${fmt(timeOf(onset))}."
+        "$head, уснул ${fmt(timeOf(onset))}."
     } else {
-        "Вечер: лёг ${fmt(timeOf(last.bedtimeMs))}, засыпание не определилось."
+        "$head, засыпание не определилось."
     }
 
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier.alpha(if (stale) STALE_ALPHA else 1f)
+    ) {
+        if (stale) StaleMark()
         Text(
             text = title,
             style = MaterialTheme.typography.caption3,
@@ -323,7 +335,7 @@ private fun EveningChart(last: BedtimeResult) {
 }
 
 @Composable
-private fun LastNight(report: NightReport?) {
+private fun LastNight(report: NightReport?, windowEnd: LocalTime) {
     if (report == null) {
         Text(
             text = "Здесь появится отчёт после первой ночи.",
@@ -334,17 +346,27 @@ private fun LastNight(report: NightReport?) {
         return
     }
 
-    val time = Instant.ofEpochMilli(report.ringedAtMillis)
-        .atZone(ZoneId.systemDefault()).toLocalTime()
+    val time = timeOf(report.ringedAtMillis)
+    // В отчётах до 261111 срок не сохранялся — тогда дата по времени звонка и без окна.
+    val deadline = report.windowEndMs.takeIf { it > 0 }
+    val day = dateOf(deadline ?: report.ringedAtMillis)
+    val stale = day < lastMorning(windowEnd)
+    val window = deadline?.let {
+        " (окно ${fmt(timeOf(it - report.windowMinutes * 60_000L))}–${fmt(timeOf(it))})"
+    } ?: ""
 
     val how = if (report.smart) "по движению" else "в конце окна"
     val pulses = report.epochs.map { it.hr }.filter { it > 0f }
     val pulseLine = if (pulses.isEmpty()) "" else
         "\nПульс %.0f–%.0f".format(pulses.min(), pulses.max())
 
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier.alpha(if (stale) STALE_ALPHA else 1f)
+    ) {
+        if (stale) StaleMark()
         Text(
-            text = "Прошлый раз: ${fmt(time)}, $how.\n" +
+            text = "Утро, ${DATE_FORMAT.format(day)}$window: ${fmt(time)}, $how.\n" +
                 "Фон %.2f · порог %.2f · пик %.2f".format(report.baseline, report.threshold, report.peak) +
                 pulseLine,
             style = MaterialTheme.typography.caption3,
@@ -430,3 +452,43 @@ private fun NightChart(report: NightReport) {
 }
 
 private fun fmt(t: LocalTime) = "%02d:%02d".format(t.hour, t.minute)
+
+// --- даты отчётов ----------------------------------------------------------
+
+private val DATE_FORMAT = DateTimeFormatter.ofPattern("d MMMM", Locale.forLanguageTag("ru"))
+
+/** Насколько приглушать отчёт не с прошлой ночи. */
+private const val STALE_ALPHA = 0.45f
+
+/** Подпись над отчётом, который не с прошлой ночи: легко принять старое за сегодняшнее. */
+@Composable
+private fun StaleMark() {
+    Text(
+        text = "давно",
+        style = MaterialTheme.typography.caption2,
+        color = MaterialTheme.colors.secondary,
+        modifier = Modifier.padding(top = 4.dp)
+    )
+}
+
+private fun dateOf(ms: Long): LocalDate =
+    Instant.ofEpochMilli(ms).atZone(ZoneId.systemDefault()).toLocalDate()
+
+/** К какому вечеру относится нажатие «Лёг спать»: 00:27 11 ноября — это вечер 10 ноября. */
+private fun nightOf(ms: Long): LocalDate =
+    Instant.ofEpochMilli(ms).atZone(ZoneId.systemDefault()).minusHours(12).toLocalDate()
+
+/** Вечер прошлой ночи. До 06:00 текущая ночь ещё идёт — прошлая была сутками раньше. */
+private fun lastCompletedNight(): LocalDate {
+    val now = LocalDateTime.now()
+    val back = if (now.toLocalTime() >= NIGHT_OVER) 1L else 2L
+    return now.toLocalDate().minusDays(back)
+}
+
+/** Последнее утро, когда отчёт уже должен был появиться: сегодня, если срок прошёл, иначе вчера. */
+private fun lastMorning(windowEnd: LocalTime): LocalDate {
+    val now = LocalDateTime.now()
+    return if (now.toLocalTime() >= windowEnd) now.toLocalDate() else now.toLocalDate().minusDays(1)
+}
+
+private val NIGHT_OVER: LocalTime = LocalTime.of(6, 0)

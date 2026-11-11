@@ -38,6 +38,7 @@ class SettingsStore(context: Context) {
             .putFloat(KEY_R_THRESH, r.threshold.toFloat())
             .putFloat(KEY_R_PEAK, r.peak.toFloat())
             .putInt(KEY_R_WINDOW, r.windowMinutes)
+            .putLong(KEY_R_DEADLINE, r.windowEndMs)
             .putString(KEY_R_EPOCHS, r.epochs.joinToString(",") { "${it.secondsToEnd}:${it.value}:${it.hr}" })
             .apply()
     }
@@ -63,6 +64,7 @@ class SettingsStore(context: Context) {
             threshold = prefs.getFloat(KEY_R_THRESH, 0f).toDouble(),
             peak = prefs.getFloat(KEY_R_PEAK, 0f).toDouble(),
             windowMinutes = prefs.getInt(KEY_R_WINDOW, 30),
+            windowEndMs = prefs.getLong(KEY_R_DEADLINE, 0L),
             epochs = parseEpochs(prefs.getString(KEY_R_EPOCHS, null))
         )
     }
@@ -154,6 +156,7 @@ class SettingsStore(context: Context) {
         const val KEY_R_PEAK = "report_peak"
         const val KEY_R_WINDOW = "report_window"
         const val KEY_R_EPOCHS = "report_epochs"
+        const val KEY_R_DEADLINE = "report_deadline"
 
         const val KEY_HANDLED_DEADLINE = "handled_deadline"
     }

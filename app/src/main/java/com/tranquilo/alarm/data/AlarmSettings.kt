@@ -33,7 +33,9 @@ data class NightReport(
     val peak: Double,
     val windowMinutes: Int = 30,
     /** Все эпохи ночи: от начала калибровки до звонка. */
-    val epochs: List<Epoch> = emptyList()
+    val epochs: List<Epoch> = emptyList(),
+    /** Крайний срок этого утра. 0 — отчёт из версий до 261111, где срок не сохранялся. */
+    val windowEndMs: Long = 0L
 )
 
 /**
